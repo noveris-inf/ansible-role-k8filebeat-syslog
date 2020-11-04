@@ -1,0 +1,119 @@
+---
+apiVersion: v1
+data:
+  ca.crt: {{ syslog_ca_data['content'] }}
+kind: Secret
+metadata:
+  name: syslog-cert
+  namespace: {{ syslog_namespace }}
+  labels:
+    app: syslog-app
+type: Opaque
+---
+apiVersion: v1
+data:
+  user: {{ syslog_elastic_user | b64encode }}
+  pass: {{ syslog_elastic_pass | b64encode }}
+kind: Secret
+metadata:
+  name: syslog-elastic-cred
+  namespace: {{ syslog_namespace }}
+  labels:
+    app: syslog-app
+type: Opaque
+---
+apiVersion: v1
+data:
+  filebeat.yml: |
+    filebeat.config:
+      modules:
+        path: ${path.config}/modules.d/*.yml
+        reload.enabled: false
+
+    processors:
+      - fingerprint:
+          fields: ["log.original", "message"]
+          target_field: "@metadata._id"
+          ignore_missing: true
+      - add_cloud_metadata: ~
+      - add_docker_metadata: ~
+      - script:
+          when:
+            has_fields: ["log.source.address"]
+          lang: javascript
+          id: source_address
+          source: |
+            function process(event) {
+              var hostData = event.Get("log.source.address").split(":")[0];
+              event.Put("host.ip", hostData);
+            }
+
+    setup.template.enabled: true
+    setup.template.name: "filebeat-syslog-%{[agent.version]}"
+    setup.template.pattern: "filebeat-syslog-%{[agent.version]}-*"
+    setup.template.overwrite: false
+
+    #setup.ilm.enabled: auto
+    #setup.ilm.rollover_alias: "filebeat-syslog-%{[agent.version]}"
+    #setup.ilm.pattern: "{now/d}-000001"
+    #setup.ilm.policy_name: "filebeat-syslog"
+    #setup.ilm.check_exists: true
+    #setup.ilm.overwrite: true
+    setup.ilm.enabled: false
+
+    output.elasticsearch:
+      enabled: true
+      hosts: ["elastic-svc:9200"]
+      username: "${SYSLOG_ELASTIC_USER}"
+      password: "${SYSLOG_ELASTIC_PASS}"
+      ssl.certificate_authorities:
+        - "/usr/share/filebeat/certs/ca.crt"
+      loadbalance: true
+      index: "filebeat-syslog-%{[agent.version]}-%{+yyyy.MM.dd}"
+      protocol: https
+      ssl.enabled: true
+
+    filebeat.inputs:
+      - type: syslog
+        protocol.udp:
+          host: "0.0.0.0:9000"
+        tags: ["filebeat_plain_syslog"]
+
+      - type: syslog
+        protocol.tcp:
+          host: "0.0.0.0:9000"
+        tags: ["filebeat_plain_syslog"]
+
+    filebeat.modules:
+    - module: cisco
+      asa:
+        enabled: true
+        var.input: syslog
+        var.syslog_host: 0.0.0.0
+        var.syslog_port: 9001
+      ftd:
+        enabled: true
+        var.input: syslog
+        var.syslog_host: 0.0.0.0
+        var.syslog_port: 9003
+      ios:
+        enabled: true
+        var.input: syslog
+        var.syslog_host: 0.0.0.0
+        var.syslog_port: 9002
+      nexus:
+        enabled: true
+        var.input: udp
+        var.syslog_host: 0.0.0.0
+        var.syslog_port: 9506
+    - module: f5
+      bigipapm:
+        enabled: true
+        var.input: udp
+        var.syslog_host: 0.0.0.0
+        var.syslog_port: 9504
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: syslog-filebeat-config
+  namespace: stackmon

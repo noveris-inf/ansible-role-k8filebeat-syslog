@@ -1,0 +1,64 @@
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: syslog-ds
+  namespace: {{ syslog_namespace }}
+  labels:
+    app: syslog-app
+spec:
+  selector:
+    matchLabels:
+      app: syslog-app
+  template:
+    metadata:
+      namespace: {{ syslog_namespace }}
+      annotations:
+        triggerHash: "{{ trigger_sha_sum['stat']['checksum'] }}"
+      labels:
+        app: syslog-app
+    spec:
+{% if syslog_tolerate_master | default(false) %}
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+{% endif %}
+      volumes:
+        - name: syslog-cert
+          secret:
+            secretName: syslog-cert
+        - name: syslog-filebeat-config
+          configMap:
+            name: syslog-filebeat-config
+      containers:
+        - name: syslog
+          image: {{ syslog_image_ref }}
+          volumeMounts:
+            - name: syslog-filebeat-config
+              mountPath: /usr/share/filebeat/filebeat.yml
+              subPath: filebeat.yml
+            - name: syslog-cert
+              mountPath: /usr/share/filebeat/certs/
+          env:
+            - name: SYSLOG_ELASTIC_USER
+              valueFrom:
+                secretKeyRef:
+                  name: syslog-elastic-cred
+                  key: user
+            - name: SYSLOG_ELASTIC_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: syslog-elastic-cred
+                  key: pass
+          ports:
+            - { name: "tcp-9000", protocol: TCP, containerPort: 9000, hostPort: 9000 }
+            - { name: "tcp-9001", protocol: TCP, containerPort: 9001, hostPort: 9001 }
+            - { name: "tcp-9002", protocol: TCP, containerPort: 9002, hostPort: 9002 }
+            - { name: "tcp-9003", protocol: TCP, containerPort: 9003, hostPort: 9003 }
+            - { name: "udp-9000", protocol: UDP, containerPort: 9000, hostPort: 9000 }
+            - { name: "udp-9001", protocol: UDP, containerPort: 9001, hostPort: 9001 }
+            - { name: "udp-9002", protocol: UDP, containerPort: 9002, hostPort: 9002 }
+            - { name: "udp-9003", protocol: UDP, containerPort: 9003, hostPort: 9003 }
+            - { name: "udp-9504", protocol: UDP, containerPort: 9504, hostPort: 9504 }
+            - { name: "udp-9506", protocol: UDP, containerPort: 9506, hostPort: 9506 }
