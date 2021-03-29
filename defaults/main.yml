@@ -3,7 +3,7 @@
 syslog_namespace: "{{ kubernetes_namespace | default('default') }}"
 syslog_config_dir: "{{ kubernetes_namespace_dir }}/syslog"
 syslog_tolerate_master: false
-syslog_image_ref: "docker.elastic.co/beats/filebeat:7.9.0"
+syslog_image_ref: "docker.elastic.co/beats/filebeat:7.12.0"
 #syslog_ca_file:
 #syslog_elastic_user:
 #syslog_elastic_pass:
